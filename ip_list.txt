@@ -1,0 +1,4 @@
+10.0.0.43 m1 manager
+10.0.0.42 m2 master
+10.0.0.44 m3 slave
+10.0.0.45 m4 slave

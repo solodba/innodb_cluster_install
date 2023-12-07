@@ -1,0 +1,352 @@
+环境介绍
+m1 10.0.0.40 管理节点(mysql-shell、mysql-router)
+m2 10.0.0.38 集群主节点(mysql-shell、mysql-8.0.31)
+m3 10.0.0.41 集群从节点(mysql-shell、mysql-8.0.31)
+m3 10.0.0.39 集群从节点(mysql-shell、mysql-8.0.31)
+
+软件介绍
+CentOS Linux release 7.6.1810 (Core)
+mysql-shell-8.0.31-linux-glibc2.12-x86-64bit.tar.gz
+mysql-router-8.0.31-linux-glibc2.12-x86_64.tar.xz
+mysql-8.0.31-linux-glibc2.12-x86_64.tar.xz
+
+一、系统环境准备
+关闭防火墙(四台主机执行)
+#在每个节点执行
+systemctl disable firewalld
+systemctl stop firewalld
+
+永久关闭selinux(四台主机执行)
+#在每个节点执行
+sed -i 's/^ *SELINUX=enforcing/SELINUX=disabled/g' /etc/selinux/config
+setenforce 0
+
+设置主机名(10.0.0.40主机上执行)
+hostnamectl set-hostname m1
+
+设置主机名(10.0.0.38主机上执行)
+hostnamectl set-hostname m2
+
+设置主机名(10.0.0.41主机上执行)
+hostnamectl set-hostname m3
+
+设置主机名(10.0.0.39主机上执行)
+hostnamectl set-hostname m4
+
+配置/etc/hosts(四台主机执行)
+cat >> /etc/hosts << EOF
+10.0.0.40   m1
+10.0.0.38   m2
+10.0.0.41   m3
+10.0.0.39   m4
+EOF
+
+配置ssh互信(10.0.0.40主机上执行)
+ssh-keygen -t rsa
+ssh-copy-id -i /root/.ssh/id_rsa.pub 10.0.0.38
+ssh-copy-id -i /root/.ssh/id_rsa.pub 10.0.0.41
+ssh-copy-id -i /root/.ssh/id_rsa.pub 10.0.0.39
+
+配置ssh互信(10.0.0.38主机上执行)
+ssh-keygen -t rsa
+ssh-copy-id -i /root/.ssh/id_rsa.pub 10.0.0.40
+ssh-copy-id -i /root/.ssh/id_rsa.pub 10.0.0.41
+ssh-copy-id -i /root/.ssh/id_rsa.pub 10.0.0.39
+
+配置ssh互信(10.0.0.41主机上执行)
+ssh-keygen -t rsa
+ssh-copy-id -i /root/.ssh/id_rsa.pub 10.0.0.40
+ssh-copy-id -i /root/.ssh/id_rsa.pub 10.0.0.38
+ssh-copy-id -i /root/.ssh/id_rsa.pub 10.0.0.39
+
+配置ssh互信(10.0.0.39主机上执行)
+ssh-keygen -t rsa
+ssh-copy-id -i /root/.ssh/id_rsa.pub 10.0.0.40
+ssh-copy-id -i /root/.ssh/id_rsa.pub 10.0.0.38
+ssh-copy-id -i /root/.ssh/id_rsa.pub 10.0.0.41
+
+yum源配置(四台主机执行)
+#将镜像文件mount至/media
+mount -o loop -t iso9660 CentOS-7-x86_64-DVD-2009.iso /media
+cat /etc/yum.repos.d/local.repo
+[local]
+name=local
+baseurl=file:///media
+gpgcheck=0
+enabled=1
+gpgkey=file:///media/RPM-GPG-KEY-CentOS-7
+#校验yum
+yum clean all
+yum list all
+
+安装libaio包(四台主机执行)
+yum -y install libaio
+
+二、管理节点安装mysql-shell和mysql-router(10.0.0.40主机上操作)
+cd /usr/local/src
+tar -zxvf mysql-shell-8.0.31-linux-glibc2.12-x86-64bit.tar.gz -C /usr/local/
+tar -xvf mysql-router-8.0.31-linux-glibc2.12-x86_64.tar.xz -C /usr/local/
+mv /usr/local/mysql-shell-8.0.31-linux-glibc2.12-x86-64bit /usr/local/mysql-shell
+mv /usr/local/mysql-router-8.0.31-linux-glibc2.12-x86_64 /usr/local/mysql-router
+vim /etc/profile
+##################################################################################
+#添加PATH路径
+export PATH=$PATH:/usr/local/mysql-shell/bin:/usr/local/mysql-router/bin
+##################################################################################
+source /etc/profile
+验证
+mysqlsh -V
+mysqlrouter -V
+
+三、集群节点安装mysql-shell和mysql(10.0.0.38、10.0.0.41、10.0.0.39主机上执行)
+groupadd mysql
+useradd -g mysql mysql
+cd /usr/local/src
+tar -zxvf mysql-shell-8.0.31-linux-glibc2.12-x86-64bit.tar.gz -C /usr/local/
+tar -xvf mysql-8.0.31-linux-glibc2.12-x86_64.tar.xz -C /usr/local/
+mv /usr/local/mysql-shell-8.0.31-linux-glibc2.12-x86-64bit /usr/local/mysql-shell
+mv /usr/local/mysql-8.0.31-linux-glibc2.12-x86_64 /usr/local/mysql
+vim /etc/profile
+##################################################################################
+#添加PATH路径
+export PATH=$PATH:/usr/local/mysql-shell/bin:/usr/local/mysql/bin
+##################################################################################
+source /etc/profile
+验证
+mysqlsh -V
+mysql -V
+mkdir -p /data/{mysqldata,mysqllog}
+chown mysql.mysql -R /data
+vim /etc/my.cnf
+##################################################################################
+[client]
+port=3306
+socket=/tmp/mysql.sock
+
+[mysqld]
+basedir=/usr/local/mysql
+datadir=/data/mysqldata
+socket=/tmp/mysql.sock
+log-error=/data/mysqllog/mysqld.log
+character-set-server=utf8mb4
+server_id=1   # m2的server_id=1,m3的server_id=2,m4的server_id=3,绝对不能重复
+gtid_mode=ON
+enforce_gtid_consistency=ON
+binlog_checksum=NONE
+
+log_bin=binlog
+log_slave_updates=ON
+binlog_format=ROW
+master_info_repository=TABLE
+relay_log_info_repository=TABLE
+transaction_write_set_extraction=XXHASH64
+binlog_transaction_dependency_tracking=WRITESET
+##################################################################################
+mysqld --initialize --user=mysql --basedir=/usr/local/mysql --datadir=/data/mysqldata
+cp /usr/local/mysql/support-files/mysql.server /etc/init.d/
+chkconfig --add /etc/init.d/mysql.server
+systemctl start mysql
+cat /data/mysqllog/mysqld.log | grep 'temporary password'
+mysql -uroot -p
+alter user user() identified by 'Root@123';
+flush privileges;
+#创建管理用户
+mysql -uroot -pRoot@123
+CREATE USER 'ic_admin'@'%' IDENTIFIED BY 'Abcd@1234';
+GRANT SELECT,INSERT,UPDATE,DELETE,CREATE,ALTER,DROP ON *.* TO 'ic_admin'@'%' WITH GRANT OPTION;
+GRANT CREATE USER, FILE, PROCESS, RELOAD, REPLICATION CLIENT, REPLICATION SLAVE, SHUTDOWN, SUPER ON *.* TO 'ic_admin'@'%' WITH GRANT OPTION;
+GRANT ALTER ROUTINE, CREATE ROUTINE, CREATE TEMPORARY TABLES, CREATE VIEW, EVENT, EXECUTE, INDEX, LOCK TABLES, REFERENCES, SHOW VIEW, TRIGGER ON mysql_innodb_cluster_metadata.* TO 'ic_admin'@'%' WITH GRANT OPTION;
+GRANT ALTER ROUTINE, CREATE ROUTINE, CREATE TEMPORARY TABLES, CREATE VIEW, EVENT, EXECUTE, INDEX, LOCK TABLES, REFERENCES, SHOW VIEW, TRIGGER ON mysql_innodb_cluster_metadata_bkp.* TO 'ic_admin'@'%' WITH GRANT OPTION;
+GRANT ALTER ROUTINE, CREATE ROUTINE, CREATE TEMPORARY TABLES, CREATE VIEW, EVENT, EXECUTE, INDEX, LOCK TABLES, REFERENCES, SHOW VIEW, TRIGGER ON mysql_innodb_cluster_metadata_previous.* TO 'ic_admin'@'%' WITH GRANT OPTION;
+GRANT CLONE_ADMIN, CONNECTION_ADMIN, EXECUTE, GROUP_REPLICATION_ADMIN, PERSIST_RO_VARIABLES_ADMIN, REPLICATION_APPLIER, REPLICATION_SLAVE_ADMIN, ROLE_ADMIN, SYSTEM_VARIABLES_ADMIN ON *.* TO 'ic_admin'@'%' WITH GRANT OPTION;
+flush privileges;
+
+三、节点配置检查(10.0.0.38主机上操作)
+mysqlsh --log-level=DEBUG3
+dba.verbose=2
+dba.checkInstanceConfiguration('ic_admin@m2:3306')
+dba.checkInstanceConfiguration('ic_admin@m3:3306')
+dba.checkInstanceConfiguration('ic_admin@m4:3306')
+
+四、节点进行集群配置(10.0.0.38主机上操作)
+mysqlsh --log-level=DEBUG3
+dba.verbose=2
+dba.configureInstance('ic_admin@m2:3306')
+dba.configureInstance('ic_admin@m3:3306')
+dba.configureInstance('ic_admin@m4:3306')
+
+五、创建集群(10.0.0.38主机上操作)
+mysqlsh --log-level=DEBUG3
+dba.verbose=2
+shell.connect('ic_admin@m2:3306')
+var cluster=dba.createCluster('myCluster')
+cluster.status()
+输出结果如下：
+{
+    "clusterName": "myCluster",
+    "defaultReplicaSet": {
+        "name": "default",
+        "primary": "m2:3306",
+        "ssl": "REQUIRED",
+        "status": "OK_NO_TOLERANCE",
+        "statusText": "Cluster is NOT tolerant to any failures.",
+        "topology": {
+            "m2:3306": {
+                "address": "m2:3306",
+                "memberRole": "PRIMARY",
+                "mode": "R/W",
+                "readReplicas": {},
+                "replicationLag": "applier_queue_applied",
+                "role": "HA",
+                "status": "ONLINE",
+                "version": "8.0.31"
+            }
+        },
+        "topologyMode": "Single-Primary"
+    },
+    "groupInformationSourceMember": "m2:3306"
+}
+
+六、添加节点(10.0.0.38主机上操作)
+mysqlsh --log-level=DEBUG3
+dba.verbose=2
+shell.connect('ic_admin@m2:3306')
+var cluster=dba.getCluster('myCluster')
+cluster.addInstance('ic_admin@m3:3306')
+cluster.addInstance('ic_admin@m4:3306')
+cluster.status()
+输出结果如下:
+{
+    "clusterName": "myCluster",
+    "defaultReplicaSet": {
+        "name": "default",
+        "primary": "m2:3306",
+        "ssl": "REQUIRED",
+        "status": "OK",
+        "statusText": "Cluster is ONLINE and can tolerate up to ONE failure.",
+        "topology": {
+            "m2:3306": {
+                "address": "m2:3306",
+                "memberRole": "PRIMARY",
+                "mode": "R/W",
+                "readReplicas": {},
+                "replicationLag": "applier_queue_applied",
+                "role": "HA",
+                "status": "ONLINE",
+                "version": "8.0.31"
+            },
+            "m3:3306": {
+                "address": "m3:3306",
+                "memberRole": "SECONDARY",
+                "mode": "R/O",
+                "readReplicas": {},
+                "replicationLag": "applier_queue_applied",
+                "role": "HA",
+                "status": "ONLINE",
+                "version": "8.0.31"
+            },
+            "m4:3306": {
+                "address": "m4:3306",
+                "memberRole": "SECONDARY",
+                "mode": "R/O",
+                "readReplicas": {},
+                "replicationLag": "applier_queue_applied",
+                "role": "HA",
+                "status": "ONLINE",
+                "version": "8.0.31"
+            }
+        },
+        "topologyMode": "Single-Primary"
+    },
+    "groupInformationSourceMember": "m2:3306"
+}
+
+七、启动mysql router(10.0.0.40主机上操作)
+cd /usr/local/src
+mysqlrouter --bootstrap ic_admin@m2:3306 -d mysqlrouter --user=root
+cd mysqlrouter/
+./start.sh
+
+八、连接测试
+管理节点本机shell连接(10.0.0.40主机上操作)
+mysqlsh --uri ic_admin@m1:6446
+dba.getCluster()
+dba.getCluster().status()
+
+远程客户节点通过mysqlrouter连接mysql(10.0.0.39主机上操作)
+mysql -uic_admin -hm1 -P6446 -p
+
+九、数据写入测试(10.0.0.40主机上操作)
+远程客户端连接mysql router，创建表并写入数据
+mysql -uic_admin -hm1 -P6446 -p
+create database test;
+use test;
+create table t1(
+    id int primary key auto_increment,
+    name varchar(50) not null
+);
+insert into t1 value(1,'test1'),(2,'test2'),(3,'test3');
+commit;
+最后检查m2、m3、m4节点是否数据成功写入
+
+十、集群相关操作
+查看集群状态(10.0.0.40主机上操作)
+mysqlsh --log-level=DEBUG3
+dba.verbose=2
+shell.connect('ic_admin@m2:3306')
+var cluster=dba.getCluster("myCluster")
+cluster.status()
+
+配置节点权重(10.0.0.40主机上操作)
+mysqlsh --log-level=DEBUG3
+dba.verbose=2
+shell.connect('ic_admin@m2:3306')
+var cluster=dba.getCluster("myCluster")
+cluster.setInstanceOption('ic_admin@m2:3306','memberWeight',100)
+cluster.setInstanceOption('ic_admin@m3:3306','memberWeight',50)
+cluster.setInstanceOption('ic_admin@m4:3306','memberWeight',25)
+
+在集群创建时配置权重(10.0.0.40主机上操作)
+mysqlsh --log-level=DEBUG3
+dba.verbose=2
+shell.connect('ic_admin@m2:3306')
+dba.createCluster('myCluster', {memberWeight:75}) // 第一个节点配置方式
+var cluster = dba.getCluster("myCluster") 
+cluster.addInstance('ic_admin@m3:3306',{memberWeight:50})
+cluster.addInstance('ic_admin@m4:3306',{memberWeight:25})
+
+将状态为MISSING的节点重新加入集群(10.0.0.40主机上操作)
+mysqlsh --log-level=DEBUG3
+dba.verbose=2
+shell.connect('ic_admin@m2:3306')
+var cluster = dba.getCluster("myCluster") 
+cluster.rejoinInstance("ic_admin@node3:3306")
+
+移除和重新加入节点(10.0.0.40主机上操作)
+mysqlsh --log-level=DEBUG3
+dba.verbose=2
+shell.connect('ic_admin@m2:3306')
+var cluster = dba.getCluster("myCluster") 
+cluster.removeInstance("ic_admin@m3:3306",{force:true})
+cluster.rescan()
+cluster.addInstance("ic_admin@m3:3306")
+
+完整关闭集群进行恢复(10.0.0.40主机上操作)
+mysqlsh --log-level=DEBUG3
+dba.verbose=2
+dba.rebootClusterFromCompleteOutage()
+
+单主模式-指定主节点切换(10.0.0.40主机上操作)
+mysqlsh --log-level=DEBUG3
+dba.verbose=2
+shell.connect('ic_admin@m2:3306')
+var cluster = dba.getCluster("myCluster")
+cluster.setPrimaryInstance('ic_admin@m3:3306')
+cluster.status()
+
+销毁集群(10.0.0.40主机上操作)
+mysqlsh --log-level=DEBUG3
+dba.verbose=2
+shell.connect('ic_admin@m2:3306')
+var cluster = dba.getCluster("myCluster")
+cluster.dissolve()
