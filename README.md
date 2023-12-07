@@ -1,0 +1,2 @@
+# innodb_cluster_install
+innodb cluster集群自动化安装脚本
