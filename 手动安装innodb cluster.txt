@@ -350,3 +350,4 @@ dba.verbose=2
 shell.connect('ic_admin@m2:3306')
 var cluster = dba.getCluster("myCluster")
 cluster.dissolve()
+
