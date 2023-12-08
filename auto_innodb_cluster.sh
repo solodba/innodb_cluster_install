@@ -15,11 +15,11 @@ rm -rf /usr/share/mysql
 echo "mysql残余文件删除完毕"
 
 #循环在每台机器上 解压安装mysql
-for ip in  $(cat $soft_dir/ip_list.txt|grep -v manager|cut -d' ' -f1)
-    do 
-         echo 在$ip上初始化mysql
-         ssh root@$ip  "$soft_dir/auto_mysql.sh"
-         echo $ip的mysql服务已经初始化完毕
-         echo 在$ip上解压mysql-shell
-         ssh root@$ip  "$soft_dir/auto_innodb_mysqlshell.sh"
-   done
+#for ip in  $(cat $soft_dir/ip_list.txt|grep -v manager|cut -d' ' -f1)
+#    do 
+         echo 在$1上初始化mysql
+         ssh root@$1  "$soft_dir/auto_mysql.sh"
+         echo $1的mysql服务已经初始化完毕
+         echo 在$1上解压mysql-shell
+         ssh root@$1  "$soft_dir/auto_innodb_mysqlshell.sh"
+#   done

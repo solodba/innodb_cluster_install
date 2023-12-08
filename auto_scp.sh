@@ -2,7 +2,7 @@
 #定义目录
 soft_dir=/usr/local/src
 
-ip_local=$(cat /etc/sysconfig/network-scripts/ifcfg-ens33 |grep IPADDR |cut -d= -f2)    #获取本地机器的ip地址
+ip_local=$(cat /etc/sysconfig/network-scripts/ifcfg-ens32 |grep IPADDR |cut -d= -f2)    #获取本地机器的ip地址
 file_tar=$(ls $soft_dir|grep ^mysql)
 
 #将 脚本和 软件复制到 其它机器

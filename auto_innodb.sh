@@ -19,6 +19,6 @@ ssh root@$ip_manager "$soft_dir/auto_innodb_manager.sh"
 #循环在每台机器上 解压安装mysql
 for ip in  $(cat $soft_dir/ip_list.txt|grep -v manager|cut -d' ' -f1)
     do
-         ssh root@$ip  "$soft_dir/auto_innodb_cluster.sh"
+         ssh root@$ip  "$soft_dir/auto_innodb_cluster.sh $ip"
          echo $ip的mysql服务已经初始化完毕
    done
